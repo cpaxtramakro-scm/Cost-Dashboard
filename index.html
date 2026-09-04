@@ -504,7 +504,7 @@ footer{padding:18px 28px;font-size:10.5px;color:var(--on-dark-3);border-top:1px 
 <aside>
   <div class="logo"><div class="mk"><div class="sq"><svg width="19" height="19" viewBox="0 0 24 24" fill="#fff"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zm6.25 0v-7H20v7h-3.5z"/></svg></div><h1>SCM COST<span>Dashboard</span></h1></div></div>
   <nav id="nav"></nav>
-  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-04 · v17.18 offline · interactive</div>
+  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-04 · v17.19 offline · interactive</div>
 </aside>
 <main>
   <div id="topbar">
@@ -1158,12 +1158,24 @@ function renderAxisChart(cfg, W, H, id){
   const labels=data.labels||[], n=labels.length;
   const dssAll=data.datasets||[];
   const hid = id? HIDDEN[id] : null;
-  const dss = dssAll.filter(d=>!(hid && d.label && hid[d.label]));   /* legend toggle: hidden series are not drawn */
+  const shown = dssAll.filter(d=>!(hid && d.label && hid[d.label]));   /* legend toggle: hidden series are not drawn */
+  /* ---- series and axis titles that follow the legend -------------------------
+     A legend toggle re-renders from the SAME config, so anything computed when the
+     config was built is frozen — which left a rate line describing series the reader
+     had just hidden, and an axis unit naming them. A dataset's `data` and a scale's
+     `title.text` may therefore be FUNCTIONS of the visible labels, evaluated here on
+     every render. The originals are never mutated: derived datasets are copies, so
+     toggling a series off and back on recomputes from the same source rather than
+     from whatever the last render happened to leave behind. */
+  const visLabels = shown.map(d=>d.label).filter(Boolean);
+  const dss = shown.map(d => (typeof d.data === 'function')
+    ? Object.assign({}, d, {data: d.data(visLabels)}) : d);
+  const axT = t => (typeof t === 'function') ? t(visLabels) : (t||'');
   const stackTotals = opts.plugins && opts.plugins.stackTotals;
   const legendOff = opts.plugins && opts.plugins.legend && opts.plugins.legend.display===false;
   const leg = legendOff? {h:4,svg:''} : legendRow(dssAll, W, id, hid);
   const sc0 = opts.scales||{};
-  const yT=(sc0.y&&sc0.y.title&&sc0.y.title.text)||'', xT=(sc0.x&&sc0.x.title&&sc0.x.title.text)||'', y2T=(sc0.y2&&sc0.y2.title&&sc0.y2.title.text)||'';
+  const yT=axT(sc0.y&&sc0.y.title&&sc0.y.title.text), xT=axT(sc0.x&&sc0.x.title&&sc0.x.title.text), y2T=axT(sc0.y2&&sc0.y2.title&&sc0.y2.title.text);
   const isLine = d => (d.type||cfg.type)==='line';
   const stacked = dss.some(d=>d.stack && !isLine(d));
   const hasY2 = dss.some(d=>d.yAxisID==='y2');
@@ -2179,7 +2191,13 @@ function pgUnit(el){
   </div>
   <div class="card" style="margin-top:14px">${chBox('chC2S',270,'Cost to sales by segment — trend (%)')}
     <div class="note">Each line divides one segment's cost by the sales that segment serves, so a line moving is that segment getting better or worse — not a mix shift somewhere else. The three do not add to the total ratio, because they divide by three different denominators.</div></div>
-  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${pctVal(c2s(SEG.total,MK.salesAll),2)}, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>`}) : ''}
+  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${pctVal(c2s(SEG.total,MK.salesAll),2)}, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>
+  <div class="note" style="border-left:3px solid var(--accent);padding-left:10px"><b>These figures will not match the FC team's or the Last-Mile team's cost-to-sales.</b>
+    All three ratios above divide by <b>Makro sales (RA report)</b>. The other two teams divide by their own systems:
+    the <b>Fulfillment Center</b> page uses FC P&amp;L sales from <b>Axtra Omni Channel (AO)</b>, and the <b>Last-Mile Delivery</b> page uses <b>RMS</b>.
+    The three systems disagree — Makro reads about <b>5% below AO</b> on fulfillment sales and about <b>2.3% above RMS</b> on the store-delivered book, consistently and in the same direction each month.
+    So the same segment can show two different percentages depending on which page you are on, and neither is wrong; they answer the same question from different books.
+    Before quoting a number to either team, check which denominator they are using. The master file sizes every pair month by month on <b>13 Sales Reconciliation</b>.</div>`}) : ''}
 
   <div class="section-h"><h5>Unit cost history — B2B and B2C together</h5><div class="ln"></div>
     <span class="mini">${uHead.length} months across · cost, then volume, then the rate</span></div>
@@ -2403,8 +2421,13 @@ function pgB2BSum(el){
     data: sl(rateOf(shFresh, false)), borderColor:TEMP_COLOR.Fresh, yAxisID:'y2', dec:2,
     dl:{dec:2, mode:'last'}}));
 
-  const rateTitle = (shDry && shFresh) ? 'THB / case (Dry) · THB / kg (Fresh)'
-                  : shDry ? 'THB / case' : 'THB / kg';
+  /* the axis names only the units actually on screen — a function, so it is
+     re-evaluated when a legend toggle re-renders the chart */
+  const rateTitle = vis => {
+    const d = vis.indexOf('THB / case') >= 0, f = vis.indexOf('THB / kg') >= 0;
+    return (d && f) ? 'THB / case (Dry) · THB / kg (Fresh)'
+         : d ? 'THB / case (Dry)' : f ? 'THB / kg (Fresh)' : 'THB per unit';
+  };
 
   mkChart('chB2BTrend',{type:'bar',data:{labels:wLBL(),datasets:ds},
     options:{...padT,scales:{x:{...gridX,stacked:true},
@@ -2805,22 +2828,43 @@ function pgB2CSum(el){
   <div class="section-h"><h5>Trend — cost and rate together</h5><div class="ln"></div>
     <span class="mini">${isAll?'all centers':esc(FC_SHORT[S.b2cFC])} · bars = cost (MB, left axis) · line = THB per order (right axis)</span></div>
   <div class="card">${chBox('chB2CTrend',320)}
-    <div class="note">Same reading as the B2B page: bars growing with a flat line is volume; a rising line is each order getting dearer to fulfill and deliver.</div></div>
+    <div class="note">Same reading as the B2B page: bars growing with a flat line is volume; a rising line is each order getting dearer to fulfill and deliver.
+      <b>Click a legend key to filter.</b> Orders are the denominator for both parts, so the rate stays one line and simply covers less — hide <i>FC operation</i> and it becomes last-mile per order, with the axis unit naming the scope.</div></div>
   <div class="section-h"><h5>Monthly data</h5><div class="ln"></div>
     <span class="mini">B2C data starts ${LBL[FC_START]} · months across</span></div>
   <div class="card">
     ${tblT(cHead, monthRowsT, 'Cost rows in MB, per-order rows in THB. A dash is a month with no orders recorded for this selection.')}
   </div>`;
 
-  const rateArr = M.map((_,k)=> ordArr[k] ? (opArr[k]+lmArr[k])*1e6/ordArr[k] : null);
+  /* ---- ONE rate line, rescoped to whatever is stacked -------------------------
+     Unlike B2B, B2C has a single common denominator — orders — so the rate stays one
+     line and simply covers less of the cost when a series is hidden. The line's data
+     and the axis title are both functions of the visible labels, so hiding
+     "FC operation" leaves last-mile per order and says so on the axis, rather than
+     leaving a total-per-order line above bars that are no longer the total. */
+  const perOrder = arr => M.map((_,k)=> ordArr[k] ? arr[k]*1e6/ordArr[k] : null);
+  const scopeOf = vis => {
+    const fc = vis.indexOf('FC operation') >= 0, lm = vis.indexOf('Last-mile') >= 0;
+    return fc && lm ? 'total' : fc ? 'FC' : lm ? 'Last-Mile' : 'none';
+  };
   mkChart('chB2CTrend',{type:'bar',data:{labels:fLBL(),datasets:[
     {label:'FC operation',data:fsl(opArr),backgroundColor:SEGCOL.fcop,stack:'s',dl:dlMB0},
     {label:'Last-mile',   data:fsl(lmArr),backgroundColor:SEGCOL.lm,  stack:'s',dl:dlMB0},
-    line({type:'line',label:'THB / order',data:fsl(rateArr),borderColor:C.avg,yAxisID:'y2',dec:0,
-      dl:{dec:0, mode:'last'}}),
+    line({type:'line',label:'THB / order',borderColor:C.avg,yAxisID:'y2',dec:0,
+      dl:{dec:0, mode:'last'},
+      data: vis => {
+        const sc = scopeOf(vis);
+        const src = sc==='total' ? M.map((_,k)=>opArr[k]+lmArr[k])
+                  : sc==='FC'    ? opArr
+                  : sc==='Last-Mile' ? lmArr : M.map(_=>null);
+        return fsl(perOrder(src));
+      }}),
   ]},options:{...padT,scales:{x:{...gridX,stacked:true},
     y:{...gridY,stacked:true,title:{display:true,text:'MB'}},
-    y2:{...gridY,title:{display:true,text:'THB / order'}}}}});
+    y2:{...gridY,title:{display:true,text: vis => {
+      const sc = scopeOf(vis);
+      return sc==='none' ? 'THB / order' : 'THB / order — '+sc;
+    }}}}}});
 }
 
 /* =========================== FULFILLMENT CENTER =========================== */
