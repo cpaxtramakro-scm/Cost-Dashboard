@@ -504,7 +504,7 @@ footer{padding:18px 28px;font-size:10.5px;color:var(--on-dark-3);border-top:1px 
 <aside>
   <div class="logo"><div class="mk"><div class="sq"><svg width="19" height="19" viewBox="0 0 24 24" fill="#fff"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zm6.25 0v-7H20v7h-3.5z"/></svg></div><h1>SCM COST<span>Dashboard</span></h1></div></div>
   <nav id="nav"></nav>
-  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-03 · v17.17 offline · interactive</div>
+  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-04 · v17.18 offline · interactive</div>
 </aside>
 <main>
   <div id="topbar">
@@ -1498,7 +1498,16 @@ const HIDDEN={};                    /* per-chart set of hidden series (legend to
 const LASTCFG={};                   /* last config per chart id, so a legend toggle can re-render */
 function killCharts(){ CHARTS=[]; }
 function toggleSeries(id,label){    /* click a legend entry to exclude / restore that series */
-  HIDDEN[id]=HIDDEN[id]||{}; HIDDEN[id][label]=!HIDDEN[id][label];
+  HIDDEN[id]=HIDDEN[id]||{};
+  const on = !HIDDEN[id][label];
+  HIDDEN[id][label]=on;
+  /* A dataset may declare `pair:'<other label>'` to say "I only mean anything while
+     that series is shown". Used for a rate line drawn against a cost series: hiding
+     Fresh cost must also hide THB/kg, or the chart keeps a rate on screen for volume
+     that is no longer in the bars — a line describing something the reader cannot
+     see. Toggling the rate on its own is still allowed; this only chains the parent. */
+  const dss = (LASTCFG[id] && LASTCFG[id].data && LASTCFG[id].data.datasets) || [];
+  dss.forEach(d=>{ if(d && d.pair === label && d.label) HIDDEN[id][d.label] = on; });
   if(LASTCFG[id]) mkChart(id, LASTCFG[id]);
 }
 /* setW: never let a style write throw. Element.style is always present in a
@@ -2209,6 +2218,7 @@ function pgUnit(el){
     scales:{x:{...gridY,stacked:true,title:{display:true,text:'THB per order'}},y:{...gridX,stacked:true}}}});
 }
 
+let _b2bTrendSel;   /* last B2B Summary selection — see the legend-reset note below */
 /* =========================== B2B SUMMARY ===========================
    The P&L shape of the B2B business, one table per temperature: what came in,
    what the DC cost, what Mid-Mile cost, what was left. Dry and Fresh are separate
@@ -2342,12 +2352,24 @@ function pgB2BSum(el){
   <div class="section-h"><h5>Trend — cost and rate together</h5><div class="ln"></div>
     <span class="mini">${isAll?'Dry and Fresh stacked':esc(S.b2bDC)} · bars = cost (MB, left axis) · line = ${tTemp==='Dry'?'THB per case':'THB per kg'} (right axis)</span></div>
   <div class="card">${chBox('chB2BTrend',320)}
-    <div class="note">A rising bar with a flat line means the bill grew because volume grew. A rising line means each ${tTemp==='Dry'?'case':'kilogram'} got dearer to handle — that is the one to act on.</div></div>
+    <div class="note">A rising bar with a flat line means the bill grew because volume grew; a rising line means each unit got dearer to handle — that is the one to act on.
+      <b>Click a legend key to filter.</b> Hiding <i>Fresh cost</i> takes its THB/kg line with it, leaving Dry and its THB/case, and the same the other way round.
+      There is no single combined rate line because there is no combined unit: Dry is counted in cases and carries no tonnage in any month, Fresh is weighed in tonnes and carries no case count — nothing in the source converts one to the other. The total that <i>is</i> well defined is the stacked bar, labelled on each column.</div></div>
   <div class="section-h"><h5>Monthly data</h5><div class="ln"></div>
     <span class="mini">${mHead.length} months across · measures down the left</span></div>
   <div class="card">
     ${tblT(mHead, monthRowsT, B2B_SUM_TXT+' Cost rows are MB and include Mid-Mile where it exists at the level shown.')}
   </div>`;
+
+  /* A legend toggle is scoped to what is on screen when you make it. Hide "Dry cost",
+     then pick a Dry site, and the chart would come back empty — the hidden flag
+     survived a selection that changed which series exist at all. Clearing it when the
+     selection changes keeps the filter meaning "hide this from what I am looking at"
+     rather than a setting that outlives its subject. */
+  if(typeof _b2bTrendSel === 'undefined' || _b2bTrendSel !== S.b2bDC){
+    if(typeof HIDDEN !== 'undefined') delete HIDDEN['chB2BTrend'];
+    _b2bTrendSel = S.b2bDC;
+  }
 
   /* the chart follows the same selection as the tables */
   const shDry   = isAll ? 'Dry'   : (selTemp==='Dry'   ? S.b2bDC : null);
@@ -2359,14 +2381,30 @@ function pgB2BSum(el){
       return v ? c/v : null;
     }) : M.map(_=>null);
 
+  /* ---- ONE RATE LINE PER TEMPERATURE, each tied to its own bars ----------------
+     There is no single "total" THB rate across both temperatures, and the data says
+     so plainly: Dry is counted in cases and has no tonnage in any month; Fresh is
+     weighed in tonnes and has no case count in any month. Nothing converts one to
+     the other, so a combined THB-per-unit figure would need a factor that does not
+     exist in the source. Averaging or adding them would print a number with no unit.
+
+     So each temperature carries its own rate line, and `pair` binds it to its bars:
+     hide Fresh cost from the legend and THB/kg goes with it, leaving Dry cost and
+     THB/case — which is what "filter Fresh out and the unit cost becomes Dry" means.
+     With both shown, both rates are on screen; the TOTAL that is well defined is the
+     stacked bar, which already carries its own total label. */
   const ds = [];
   if(shDry)   ds.push({label:'Dry cost',  data:sl(costOf(shDry)),  backgroundColor:TEMP_COLOR.Dry,  stack:'s', dl:dlMB0});
   if(shFresh) ds.push({label:'Fresh cost',data:sl(costOf(shFresh)),backgroundColor:TEMP_COLOR.Fresh,stack:'s', dl:dlMB0});
-  const rateSheet = shDry || shFresh;
-  const rateTitle = tTemp==='Dry' ? 'THB / case' : 'THB / kg';
-  ds.push(line({type:'line', label:rateTitle,
-    data: sl(rateOf(rateSheet, tTemp==='Dry')), borderColor:C.avg, yAxisID:'y2', dec:2,
+  if(shDry)   ds.push(line({type:'line', label:'THB / case', pair:'Dry cost',
+    data: sl(rateOf(shDry, true)), borderColor:TEMP_COLOR.Dry, yAxisID:'y2', dec:2,
     dl:{dec:2, mode:'last'}}));
+  if(shFresh) ds.push(line({type:'line', label:'THB / kg', pair:'Fresh cost',
+    data: sl(rateOf(shFresh, false)), borderColor:TEMP_COLOR.Fresh, yAxisID:'y2', dec:2,
+    dl:{dec:2, mode:'last'}}));
+
+  const rateTitle = (shDry && shFresh) ? 'THB / case (Dry) · THB / kg (Fresh)'
+                  : shDry ? 'THB / case' : 'THB / kg';
 
   mkChart('chB2BTrend',{type:'bar',data:{labels:wLBL(),datasets:ds},
     options:{...padT,scales:{x:{...gridX,stacked:true},
