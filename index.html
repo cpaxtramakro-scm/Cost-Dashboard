@@ -504,7 +504,7 @@ footer{padding:18px 28px;font-size:10.5px;color:var(--on-dark-3);border-top:1px 
 <aside>
   <div class="logo"><div class="mk"><div class="sq"><svg width="19" height="19" viewBox="0 0 24 24" fill="#fff"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zm6.25 0v-7H20v7h-3.5z"/></svg></div><h1>SCM COST<span>Dashboard</span></h1></div></div>
   <nav id="nav"></nav>
-  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-04 · v17.19 offline · interactive</div>
+  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-07 · v17.28 offline · interactive</div>
 </aside>
 <main>
   <div id="topbar">
@@ -592,7 +592,35 @@ const FC_COLOR = {FC402:'#4F46E5',FC403:'#C026D3',FC404:'#06B6D4',FC405:'#1E1B4B
 const SEC_COLOR = {personnel:'#4F46E5',establishment:'#06B6D4',sales_promo:'#C026D3',computer:'#E879F9',repair_maint:'#F59E0B',general:'#1E1B4B',depreciation:'#A5B4FC',rent:'#A16207',financial:'#0E7490',other_income:'#3B82F6',tfrs16:'#FCD34D'};
 /* Warm = ambient, cool = chilled. The old map had this backwards from intuition
    (Dry amber, Fresh brand-blue) purely because those were the two brand colours. */
-const TEMP_COLOR = {Dry:'#F59E0B',Fresh:'#06B6D4'};   /* Dry = warm amber, Fresh = cold cyan */
+const TEMP_COLOR = {Dry:'#F59E0B',Fresh:'#06B6D4'};
+/* ---- rate-line colours -------------------------------------------------------
+   Each line stays in its bar's colour FAMILY — the Dry rate is a deepened amber over
+   amber bars, the Fresh rate a blue over the light-blue bars — so a glance still
+   pairs line to bars without reading the legend.
+
+   Same-family only works because of the white casing the line renderer draws
+   underneath it. Without that, a darkened amber over amber was genuinely hard to
+   pick out (v17.21-22); the casing supplies the hard edge, and the colour is then
+   free to signal kinship rather than contrast.
+
+   Measured: Dry line dE 25.4 from its bars, Fresh line dE 33.0 from its bars, and
+   dE 54.7 between the two lines. Both sit at L* 45-46 — mid-tone, deliberately not
+   near-black, which was the complaint against the first attempt. */
+/* ---- Makro sales channels ----------------------------------------------------
+   Offline is deliberately the quiet one: it is ~70% of the book and NO cost in this
+   model touches it, so it should read as background rather than compete with the two
+   channels the supply chain actually serves. The online channels carry the identity
+   of the operation that serves them — store delivery indigo, FC dock fuchsia, the
+   same hues those segments use in the cost charts. */
+const MK_COLOR = { offline:'#CBD5E1', o2oStore:'#4F46E5', fcSales:'#C026D3' };
+
+const RATE_DRY   = '#935F07';   /* deepened amber — Dry rate over amber bars      */
+const RATE_FRESH = '#2563EB';   /* blue           — Fresh rate over light-blue bars */
+/* B2C keeps its original deep navy. It is the one rate line on its page and it
+   rescopes across FC, Last-Mile and total, so it belongs to no single stack — a
+   neutral dark reads over both segments without implying it describes either.
+   Style (2.6px, solid, white casing) still matches B2B; only the colour differs. */
+const RATE_B2C   = C.avg;       /* #1E1B4B deep navy — as before */   /* Dry = warm amber, Fresh = cold cyan */
 /* last-mile identities */
 const LM_CH_COLOR = {store:'#4F46E5', fc:'#C026D3', local:'#F59E0B'};
 const LM_TRUCK_COLOR = {'4W':'#4F46E5', '2W':'#06B6D4'};
@@ -1175,10 +1203,17 @@ function renderAxisChart(cfg, W, H, id){
   const legendOff = opts.plugins && opts.plugins.legend && opts.plugins.legend.display===false;
   const leg = legendOff? {h:4,svg:''} : legendRow(dssAll, W, id, hid);
   const sc0 = opts.scales||{};
-  const yT=axT(sc0.y&&sc0.y.title&&sc0.y.title.text), xT=axT(sc0.x&&sc0.x.title&&sc0.x.title.text), y2T=axT(sc0.y2&&sc0.y2.title&&sc0.y2.title.text);
+  const yT=axT(sc0.y&&sc0.y.title&&sc0.y.title.text), xT=axT(sc0.x&&sc0.x.title&&sc0.x.title.text), y2T=axT(sc0.y2&&sc0.y2.title&&sc0.y2.title.text), y3T=axT(sc0.y3&&sc0.y3.title&&sc0.y3.title.text);
   const isLine = d => (d.type||cfg.type)==='line';
   const stacked = dss.some(d=>d.stack && !isLine(d));
   const hasY2 = dss.some(d=>d.yAxisID==='y2');
+  /* A THIRD scale, for the case where three series share a chart and no two of them
+     share a range — cost in MB, sales in MB two orders larger, and a percentage. Two
+     axes cannot carry that: forcing any pair together flattens one into the baseline.
+     y3 sits outboard of y2 on the right and is drawn in its series' own colour, so
+     which line reads against which scale needs no explaining. Used sparingly; a chart
+     needing three numeric axes is usually a chart that should be two charts. */
+  const hasY3 = dss.some(d=>d.yAxisID==='y3');
 
   /* domains */
   function domain(axis){
@@ -1201,22 +1236,26 @@ function renderAxisChart(cfg, W, H, id){
     const head=(hi-lo)*(stackTotals||dss.some(d=>d.dl)?0.14:0.08);
     return niceTicks(lo, hi+head, 5);
   }
-  const dy=domain('y'), dy2=hasY2? domain('y2') : null;
+  const dy=domain('y'), dy2=hasY2? domain('y2') : null, dy3=hasY3? domain('y3') : null;
 
   /* layout */
   /* axis-unit labels sit ABOVE the plot; reserve a row for them so they never land on
      the top tick number (previously both were drawn at the same height) */
-  const padL = (horiz? 96 : 46) + (yT?15:0), padR = (hasY2? 48 : 16) + (y2T?14:0),
-        padT = leg.h+10 + ((yT||y2T)? 12 : 0), padB = (horiz? 8 : 22) + (xT?22:0);
+  const padL = (horiz? 96 : 46) + (yT?15:0),
+        padR = (hasY2? 48 : 16) + (y2T?14:0) + (hasY3? 46 : 0),
+        padT = leg.h+10 + ((yT||y2T)? 12 : 0) + (y3T? 12 : 0), padB = (horiz? 8 : 22) + (xT?22:0);
   const plotW = W-padL-padR, plotH = H-padT-padB;
   const sy  = v => padT + plotH - (v-dy.lo)/(dy.hi-dy.lo)*plotH;
   const sy2 = dy2? (v => padT + plotH - (v-dy2.lo)/(dy2.hi-dy2.lo)*plotH) : null;
+  const sy3 = dy3? (v => padT + plotH - (v-dy3.lo)/(dy3.hi-dy3.lo)*plotH) : null;
+  /* colour each right-hand axis like the series that reads against it */
+  const axCol = id => { const d = dss.find(x=>x.yAxisID===id); return (d && (d.borderColor || (typeof d.backgroundColor==='string'? d.backgroundColor : null))) || C.ink2; };
   const sx  = v => padL + (v-dy.lo)/(dy.hi-dy.lo)*plotW;      /* horiz value axis */
   let out=[];
 
   /* grid + ticks (axes may show up to 2 decimals when the tick step is fractional) */
   const tdec = tk=>{ const s=tk.length>1? Math.abs(tk[1]-tk[0]) : 1; return s>=1?0:(s>=0.1?1:2); };
-  const dD=tdec(dy.ticks), d2D=dy2?tdec(dy2.ticks):0;
+  const dD=tdec(dy.ticks), d2D=dy2?tdec(dy2.ticks):0, d3D=dy3?tdec(dy3.ticks):0;
   if(horiz){
     dy.ticks.forEach(t=>{ const x=sx(t);
       out.push(`<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="#EFEFF3"/>`);
@@ -1227,12 +1266,61 @@ function renderAxisChart(cfg, W, H, id){
       out.push(`<line x1="${padL}" y1="${y}" x2="${padL+plotW}" y2="${y}" stroke="#EFEFF3"/>`);
       out.push(txt(padL-6, y+3, fmt(t,dD), {anchor:'end'}));
     });
-    if(dy2) dy2.ticks.forEach(t=>{ const y=sy2(t); out.push(txt(padL+plotW+6, y+3, fmt(t,d2D), {anchor:'start'})); });
+    if(dy2) dy2.ticks.forEach(t=>{ const y=sy2(t); out.push(txt(padL+plotW+6, y+3, fmt(t,d2D), {anchor:'start', color:hasY3? axCol('y2') : C.ink2})); });
+    if(dy3) dy3.ticks.forEach(t=>{ const y=sy3(t); out.push(txt(padL+plotW+50, y+3, fmt(t,d3D), {anchor:'start', color:axCol('y3')})); });
   }
   /* axis unit labels */
-  if(yT) out.push(txt(padL-6, padT-13, yT, {anchor:'end', size:9, weight:800, color:C.ink2}));
-  if(y2T) out.push(txt(padL+plotW+6, padT-13, y2T, {anchor:'start', size:9, weight:800, color:C.ink2}));
-  if(xT) out.push(txt(padL+plotW/2, H-2, xT, {size:9.5, weight:800, color:C.ink2}));
+  /* ---- axis unit labels, anchored to the CHART edges and shrunk to fit ---------
+     These used to start at the plot edge and grow outward: the y2 title began at
+     padL+plotW+6 anchored 'start', so anything longer than the right padding ran
+     straight off the canvas and was clipped with no warning. "THB / case (Dry) ·
+     THB / kg (Fresh)" needs ~170px against ~60px of padding, so most of it was
+     simply not on screen — and because clipped text overlaps nothing, the overlap
+     gate never saw it.
+     Now each label is anchored to its own side of the FULL width and the pair is
+     measured together: if they do not both fit they shrink to 7px, and only if that
+     still fails is the longer one trimmed — with the full string kept in a <title>
+     so hovering always gives the whole unit. */
+  const CW = 0.55;                                   /* mean glyph width / font size */
+  if(yT || y2T){
+    const fit = (a, b) => {
+      let fs = 9;
+      const w = t => (t ? String(t).length * fs * CW : 0);
+      while(fs > 7 && w(a) + w(b) + 14 > W) fs -= 0.5;
+      return fs;
+    };
+    const fs = fit(yT, y2T);
+    const room = t => Math.max(0, (W - 14) * (t === yT && y2T ? 0.5 : 1));
+    const place = (t, x, anchor, colour) => {
+      if(!t) return;
+      const full = String(t);
+      const max = Math.max(4, Math.floor(((yT && y2T) ? (W - 14) / 2 : W - 8) / (fs * CW)));
+      const shown = full.length > max ? full.slice(0, max - 1) + '…' : full;
+      out.push(`<g><title>${esc(full)}</title>`
+        + txt(x, padT - 13, shown, {anchor, size: fs, weight: 800, color: colour || C.ink2})
+        + `</g>`);
+    };
+    place(yT, 3, 'start');
+    place(y2T, W - 3, 'end', hasY3 ? axCol('y2') : C.ink2);
+  }
+  /* the third axis names itself on its own line, in its series' colour — with three
+     scales in play, an uncoloured label leaves the reader guessing which line it
+     belongs to */
+  if(y3T){
+    let fs3 = 9;
+    while(fs3 > 7 && String(y3T).length * fs3 * CW > W - 8) fs3 -= 0.5;
+    out.push(`<g><title>${esc(String(y3T))}</title>`
+      + txt(W - 3, padT - 24, String(y3T), {anchor:'end', size:fs3, weight:800, color:axCol('y3')})
+      + `</g>`);
+  }
+  if(xT){
+    let fs = 9.5;
+    while(fs > 7 && String(xT).length * fs * CW > W - 10) fs -= 0.5;
+    const max = Math.max(4, Math.floor((W - 10) / (fs * CW)));
+    const shown = String(xT).length > max ? String(xT).slice(0, max - 1) + '…' : String(xT);
+    out.push(`<g><title>${esc(String(xT))}</title>`
+      + txt(padL + plotW/2, H-2, shown, {size: fs, weight: 800, color: C.ink2}) + `</g>`);
+  }
 
   const band = (horiz? plotH : plotW)/Math.max(n,1);
   const bandPos = i => (horiz? padT : padL) + band*i + band/2;
@@ -1332,6 +1420,17 @@ function renderAxisChart(cfg, W, H, id){
     const placed=[]; let s='';
     LQ.forEach(L=>{
       const w=L.s.length*L.size*0.58;
+      /* Keep every label inside the canvas. A middle-anchored value sitting on the
+         LAST point of a line is centred on the right-hand edge of the plot, so half
+         of it hung past the SVG and was clipped once the container got narrow — the
+         end-of-line figure, which is the one most worth reading. Clamping here covers
+         every queued label at once rather than each call site guessing its own
+         margin; the collision pass below then runs on the clamped position, so a
+         nudged label cannot be pushed back out. */
+      const half = w/2 + 2;
+      if(L.anchor==='middle') L.x = Math.min(Math.max(L.x, half), W - half);
+      else if(L.anchor==='start') L.x = Math.min(L.x, W - w - 2);
+      else if(L.anchor==='end')   L.x = Math.max(L.x, w + 2);
       const cx=L.anchor==='start'? L.x+w/2 : (L.anchor==='end'? L.x-w/2 : L.x);
       let y=L.y, ok=false;
       for(let t=0;t<3;t++){
@@ -1366,7 +1465,7 @@ function renderAxisChart(cfg, W, H, id){
     /* last index where BOTH lines have a value — where the tag goes */
     let lastIdx=-1;
     for(let i=0;i<n;i++){ if(nz(d.data[i])!=null && nz(other.data[i])!=null) lastIdx=i; }
-    const sc = (d.yAxisID==='y2'&&sy2)? sy2 : sy;
+    const sc = (d.yAxisID==='y3'&&sy3)? sy3 : (d.yAxisID==='y2'&&sy2)? sy2 : sy;
     const col = d.connectColor || C.ink2;
     for(let i=0;i<n;i++){
       const a=nz(d.data[i]), b=nz(other.data[i]);
@@ -1390,7 +1489,7 @@ function renderAxisChart(cfg, W, H, id){
   /* lines */
   dss.forEach(d=>{
     if(!isLine(d)) return;
-    const sc = (d.yAxisID==='y2'&&sy2)? sy2 : sy;
+    const sc = (d.yAxisID==='y3'&&sy3)? sy3 : (d.yAxisID==='y2'&&sy2)? sy2 : sy;
     let path='', started=false;
     const pts=[];
     for(let i=0;i<n;i++){
@@ -1399,8 +1498,26 @@ function renderAxisChart(cfg, W, H, id){
       path += (started?' L':'M')+x.toFixed(1)+' '+y.toFixed(1); started=true;
       pts.push({x,y,v,i});
     }
-    out.push(`<path d="${path}" fill="none" stroke="${d.borderColor||C.navy}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`);
-    pts.forEach(p=> out.push(`<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${d.borderColor||C.navy}"${tip(d.label||labels[p.i], fmt(p.v, d.dec!=null?d.dec:1)+(d.suffix||''), d.label? labels[p.i] : '', d.borderColor||C.navy)}></circle></g>`));
+    /* ---- a line has to be readable over whatever it crosses --------------------
+       Three fixes here, in order of how much they matter:
+
+       1. HALO. The line is drawn twice — a white stroke underneath, then the colour
+          on top. A rate line laid over its own bars was invisible at any colour that
+          belonged to the same family, and darkening it only went so far; a white
+          casing separates it from ANY fill, including its own, without touching the
+          palette. This is the standard treatment for a line over a filled area.
+       2. DASH. `d.dash` draws it dashed, which distinguishes a RATE from the solid
+          bars by shape rather than colour — so it survives greyscale printing and
+          colour blindness, neither of which a hue change helps with.
+       3. borderWidth was hardcoded at 2.2, silently ignoring what the caller asked
+          for. It is honoured now.
+       The point markers get the same white casing for the same reason. */
+    const lw = d.borderWidth || 2.2;
+    const lc = d.borderColor || C.navy;
+    const dash = d.dash ? ` stroke-dasharray="${d.dash}"` : '';
+    out.push(`<path d="${path}" fill="none" stroke="#FFFFFF" stroke-width="${(lw+3).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round" stroke-opacity="0.92"/>`);
+    out.push(`<path d="${path}" fill="none" stroke="${lc}" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round"${dash}/>`);
+    pts.forEach(p=> out.push(`<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(lw*0.95+1.4).toFixed(1)}" fill="#FFFFFF" fill-opacity="0.92"/><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${lc}"${tip(d.label||labels[p.i], fmt(p.v, d.dec!=null?d.dec:1)+(d.suffix||''), d.label? labels[p.i] : '', lc)}></circle></g>`));
   });
 
   /* value labels (dl) — queued, then collision-resolved */
@@ -1415,7 +1532,7 @@ function renderAxisChart(cfg, W, H, id){
     const dd = d.dl.fmt? null : adaptDec(d.data.map(nz), d.dl.dec);
     const f = d.dl.fmt || (x=>fmt(x,dd));
     const li=(()=>{let k=-1; d.data.forEach((v,i)=>{ if(nz(v)!=null) k=i; }); return k;})();
-    const sc=(d.yAxisID==='y2'&&sy2)? sy2 : sy;
+    const sc=(d.yAxisID==='y3'&&sy3)? sy3 : (d.yAxisID==='y2'&&sy2)? sy2 : sy;
     const fill = (typeof d.backgroundColor==='string')? d.backgroundColor : null;
     for(let i=0;i<n;i++){
       const v=nz(d.data[i]); if(v==null||(v===0&&isLine(d))) continue;
@@ -1677,6 +1794,18 @@ function resetFilters(){
 }
 /* mix a hex colour toward white by amt (0..1) — used for the "previous period" bars
    so MoM/YoY share the cost-trend segment hues, just paler. */
+/* Darken toward black by amt (0..1). The counterpart to lighten(), used where a LINE
+   has to be read against BARS of its own identity colour: the B2B trend draws Dry
+   cost as amber bars and the Dry rate as a line, and at the same hue the line simply
+   vanished into the bars whenever one temperature was shown alone.
+   0.55 is not a guess — measured, it puts the line at 3.8:1 against its own bar and
+   8.2:1 against the white card, so it reads both over the bars and in the gap above
+   them while staying recognisably the warm (or cold) colour. */
+function darken(hex, amt){
+  const n=parseInt(String(hex).slice(1),16); let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  r=Math.round(r*(1-amt)); g=Math.round(g*(1-amt)); b=Math.round(b*(1-amt));
+  return '#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1);
+}
 function lighten(hex, amt){
   const n=parseInt(hex.slice(1),16); let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
   r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
@@ -1967,7 +2096,14 @@ function pgSummary(el){
   <div class="grid g2e" style="margin-top:14px">
     <div class="card">${chBox('chMoM',280,`${S.mode==='M'?(i>0?label(M[i-1])+' vs ':'')+label(S.month):'YTD vs same period LY'} — by segment (MB)`)}<div class="note">Each segment carries its cost-trend colour · pale bar = previous period, solid = current. Click a bar to open that segment.</div></div>
     <div class="card">${chBox('chYoY',280,`Same ${S.mode==='M'?'month':'period'} last year — all segments (MB)`)}<div class="note">Each segment carries its cost-trend colour · pale bar = last year, solid = current. FC Operation and Last-Mile show 0 for last year because B2C data starts January 2026.</div></div>
-  </div>`;
+  </div>
+  ${MK.ok ? `
+  <div class="section-h"><h5>Cost to sales — 12 months to ${label(S.month)}</h5><div class="ln"></div>
+    <span class="mini">bars = what Makro sold, split by channel (MB) · line = Total SCM ÷ those sales (%)</span></div>
+  <div class="card">${chBox('chC2Sum',310)}
+    <div class="note"><b>Three scales, one per series</b> — cost runs around 900 MB, sales around 21,700 MB and the ratio around 4%, so no two of them share an axis. Each right-hand axis is drawn in its own line's colour.
+      Read the ratio against its two drivers: it falls when sales outgrow cost, and it falls differently when cost itself comes down. The bars and the sales line tell you which happened.
+      <b>The denominator includes offline sales</b> — about 70% of the book, which no cost in this model touches — so this ratio is structurally low. Per-segment ratios, each over the sales it genuinely serves, are on <b>Unit Cost Analysis</b>.</div></div>` : ''}`;
 
   const totSl = sl(totArr).filter(v=>v);
   const totAvg = totSl.length? totSl.reduce((a,b)=>a+b,0)/totSl.length : null;
@@ -2001,6 +2137,35 @@ function pgSummary(el){
     {label:'Last year',data:segArrs.map(lyOf),backgroundColor:segPale,legendColor:lighten(C.ink2,0.5),borderRadius:4,dl:dlMB0,drill:segGo},
     {label:'Current',data:segArrs.map(a=>pSum(a)),backgroundColor:segCols,legendColor:C.ink2,borderRadius:4,dl:dlMB0,drill:segGo},
   ]},options:{...padT,scales:{x:gridX,y:{...gridY,title:{display:true,text:'MB'}}}}});
+
+  /* ---- cost to sales, with the sales book underneath it ----------------------
+     Sales stacked by channel as bars, the headline ratio as a line on its own axis.
+     The two belong together: a ratio moving tells you nothing about WHY until you can
+     see whether the denominator moved. Total SCM itself is already stacked further up
+     the page, so repeating it here would say nothing new — the sales split does. */
+  if(MK.ok){
+    /* Cost, sales and the ratio between them — three series, and no two of them share
+       a range: cost runs ~900 MB, sales ~21,700 MB, the ratio ~4%. Put any pair on one
+       axis and one of them flattens into the baseline, so each gets its own scale and
+       each right-hand axis is drawn in its series' colour. */
+    const c2sArr = M.map((_,k)=> MK.salesAll[k] ? SEG.total[k]/MK.salesAll[k]*100 : null);
+    mkChart('chC2Sum',{type:'bar',data:{labels:wLBL(),datasets:[
+      {label:'Total SCM cost', data:sl(SEG.total), backgroundColor:SEGCOL.total,
+        borderRadius:3, dl:dlMB0},
+      /* three separate colour families, because these are three different measures
+         rather than parts of one whole: navy bars for cost, teal for the sales line,
+         bronze for the ratio. Reusing a segment hue here would imply a link to a
+         segment that does not exist. */
+      line({type:'line', label:'Makro sales', data:sl(MK.salesAll), borderColor:C.teal,
+        borderWidth:2.6, yAxisID:'y2', dec:0, dl:{dec:0, mode:'last'}}),
+      line({type:'line', label:'Cost to sales %', data:sl(c2sArr), borderColor:C.bronze,
+        borderWidth:2.6, yAxisID:'y3', dec:2, dl:{dec:2, mode:'last'}}),
+    ]},options:{...padT,
+      scales:{x:gridX,
+        y: {...gridY, title:{display:true, text:'Total SCM cost (MB)'}},
+        y2:{...gridY, title:{display:true, text:'Makro sales (MB)'}},
+        y3:{...gridY, title:{display:true, text:'Cost to sales (%)'}}}}});
+  }
 }
 
 /* =========================== UNIT COST =========================== */
@@ -2414,12 +2579,30 @@ function pgB2BSum(el){
   const ds = [];
   if(shDry)   ds.push({label:'Dry cost',  data:sl(costOf(shDry)),  backgroundColor:TEMP_COLOR.Dry,  stack:'s', dl:dlMB0});
   if(shFresh) ds.push({label:'Fresh cost',data:sl(costOf(shFresh)),backgroundColor:TEMP_COLOR.Fresh,stack:'s', dl:dlMB0});
+  /* The rate line is a DARKENED version of its temperature, not the same colour.
+     Drawn at the identical hue it disappeared into its own bars the moment one
+     temperature was viewed alone — same family, no separation. Darkening keeps the
+     Dry line warm and the Fresh line cold, so the pairing is still obvious, while
+     giving 3.8:1 against the bar it crosses. The extra weight helps it stay legible
+     where it runs through a tall stack. */
+  /* ---- rate-line colours: chosen for contrast, not for family resemblance -----
+     These were a darkened version of each temperature, which was the whole problem:
+     at L* 30 and 28 they were both dark AND similarly dark, so they hid in their own
+     bars and were hard to tell from each other. A rate is a different KIND of thing
+     from a quantity, so it does not need to look like its bars — the dash pattern and
+     the legend carry the pairing.
+     Each line stays in its bar's FAMILY — deepened amber over the amber bars, blue
+     over the light-blue ones — so line and bars pair at a glance. That only works
+     because the renderer draws a white casing under every line: it supplies the edge,
+     leaving the colour free to signal kinship instead of contrast. Solid, not dashed:
+     the dash was a stand-in for separation the casing now provides, and a continuous
+     stroke is easier to follow across twelve months. Measured in app_core.js. */
   if(shDry)   ds.push(line({type:'line', label:'THB / case', pair:'Dry cost',
-    data: sl(rateOf(shDry, true)), borderColor:TEMP_COLOR.Dry, yAxisID:'y2', dec:2,
-    dl:{dec:2, mode:'last'}}));
+    data: sl(rateOf(shDry, true)), borderColor:RATE_DRY, borderWidth:2.6,
+    yAxisID:'y2', dec:2, dl:{dec:2, mode:'last'}}));
   if(shFresh) ds.push(line({type:'line', label:'THB / kg', pair:'Fresh cost',
-    data: sl(rateOf(shFresh, false)), borderColor:TEMP_COLOR.Fresh, yAxisID:'y2', dec:2,
-    dl:{dec:2, mode:'last'}}));
+    data: sl(rateOf(shFresh, false)), borderColor:RATE_FRESH, borderWidth:2.6,
+    yAxisID:'y2', dec:2, dl:{dec:2, mode:'last'}}));
 
   /* the axis names only the units actually on screen — a function, so it is
      re-evaluated when a legend toggle re-renders the chart */
@@ -2850,7 +3033,9 @@ function pgB2CSum(el){
   mkChart('chB2CTrend',{type:'bar',data:{labels:fLBL(),datasets:[
     {label:'FC operation',data:fsl(opArr),backgroundColor:SEGCOL.fcop,stack:'s',dl:dlMB0},
     {label:'Last-mile',   data:fsl(lmArr),backgroundColor:SEGCOL.lm,  stack:'s',dl:dlMB0},
-    line({type:'line',label:'THB / order',borderColor:C.avg,yAxisID:'y2',dec:0,
+    /* same treatment as the B2B trend: 2.6px, solid, white casing from the renderer,
+       and a colour that reads over both stacked segments rather than matching either */
+    line({type:'line',label:'THB / order',borderColor:RATE_B2C,borderWidth:2.6,yAxisID:'y2',dec:0,
       dl:{dec:0, mode:'last'},
       data: vis => {
         const sc = scopeOf(vis);
