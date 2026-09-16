@@ -549,7 +549,7 @@ footer{padding:18px 28px;font-size:10.5px;color:var(--on-dark-3);border-top:1px 
 <aside>
   <div class="logo"><div class="mk"><div class="sq"><svg width="19" height="19" viewBox="0 0 24 24" fill="#fff"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zm6.25 0v-7H20v7h-3.5z"/></svg></div><h1>SCM COST<span>Dashboard</span></h1></div></div>
   <nav id="nav"></nav>
-  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-16 · v1.0.2 offline · interactive</div>
+  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-16 · v1.0.3 offline · interactive</div>
 </aside>
 <main>
   <div id="topbar">
@@ -2469,7 +2469,7 @@ function pgUnit(el){
         chips:[chip(pSum(dryIn),pPrev(dryIn),cmpLbl(),true),chip(pSum(dryIn),pYoY(dryIn),'YoY',true)]})}
       ${uCard('1 · Total Dry Cost per case', dryGrand, dryIn,'THB/Case',2,'',"DC operation + TFRS16 + Mid-Mile ÷ inbound cases",TEMP_COLOR.Dry)}
       ${uCard('2 · DC Cost per case', dryWH, dryIn,'THB/Case',2,'',"(warehouse cost + TFRS16) ÷ inbound cases",TEMP_COLOR.Dry)}
-      ${uCard('3 · Mid-Mile Transport per case', mmC, dryIn,'THB/Case',2,'',"mid-mile transport ÷ inbound cases",TEMP_COLOR.Dry)}
+      ${uCard('3 · Mid-Mile Transport per case', mmC, outC,'THB/Case',2,'',"mid-mile transport ÷ <b>outbound</b> cases",TEMP_COLOR.Dry)}
     </div>
     <div class="tpanel" style="--tc:${TEMP_COLOR.Fresh}">
       <div class="thead">
@@ -2485,16 +2485,21 @@ function pgUnit(el){
         chips:[chip(pSum(freshKg),pPrev(freshKg),cmpLbl(),true),chip(pSum(freshKg),pYoY(freshKg),'YoY',true)]})}
       ${uCard('1 · Total Fresh Cost per kg', freshGrand, freshKg,'THB/Kg',2,'',"DC operation + TFRS16 + Mid-Mile ÷ kg",TEMP_COLOR.Fresh)}
       ${uCard('2 · DC Cost per kg', freshWH, freshKg,'THB/Kg',2,'',"(warehouse cost + TFRS16) ÷ kg",TEMP_COLOR.Fresh)}
-      ${uCard('3 · Fresh Mid-Mile Transport per kg', freshMM, freshKg,'THB/Kg',2,'',"mid-mile transport ÷ kg",TEMP_COLOR.Fresh)}
+      ${uCard('3 · Fresh Mid-Mile Transport per kg', freshMM, freshKg,'THB/Kg',2,'',"mid-mile transport ÷ kg shipped out",TEMP_COLOR.Fresh)}
     </div>
   </div>
   <div class="grid g2e" style="margin-top:10px">
-    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly. Card 2 is warehouse cost <b>including</b> the TFRS16 lease, because TFRS16 is a charge on the warehouse. All three divide by the same inbound cases, so they read on one scale.</div>
-    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly. Card 2 is warehouse cost <b>including</b> the TFRS16 lease, because TFRS16 is a charge on the warehouse. All three divide by the same kilograms, so they read on one scale.</div>
+    <div class="note" style="margin:0"><b>Cards 1 and 2 divide by inbound cases; card 3 divides by outbound cases.</b>
+      That is deliberate, and it is the source file's own convention: warehousing is driven by what comes in and gets handled,
+      mid-mile transport by what ships out. The two counts differ (${fmt(pSum(dryIn),0)} in, ${fmt(pSum(outC),0)} out this period),
+      so <b>card 2 + card 3 does not equal card 1</b> — ${fmt((uVal(dryWH,dryIn)||0)+(uVal(mmC,outC)||0),2)} against ${fmt(uVal(dryGrand,dryIn)||0,2)}.
+      On one denominator they would: mid-mile over inbound cases is ${fmt(uVal(mmC,dryIn)||0,2)}, which is the gap drawn in the chart below.
+      Card 2 includes the TFRS16 lease, because TFRS16 is a charge on the warehouse.</div>
+    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly. Fresh carries no case count in any month, so every Fresh rate divides by the same kilograms — the weight shipped out — and the three read on one scale. Card 2 includes the TFRS16 lease, because TFRS16 is a charge on the warehouse.</div>
   </div>
   <div class="grid g2e" style="margin-top:16px">
     <div class="card">${chBox('chUDry',260,'Dry unit cost trend (THB/Case)')}
-      <div class="note">The pale dotted rules join the two lines each month — that gap <b>is</b> the Mid-Mile transport per case. Hover a rule to read the figure.</div></div>
+      <div class="note">The pale dotted rules join the two lines each month — that gap is mid-mile's share of the all-in rate, both lines being over <b>inbound</b> cases. It is not card 3 above, which divides by outbound cases; hover a rule to read it.</div></div>
     <div class="card">${chBox('chUFresh',260,'Fresh unit cost trend (THB/Kg)')}
       <div class="note">The pale dotted rules join the two lines each month — that gap <b>is</b> the Mid-Mile transport per kilogram. Hover a rule to read the figure.</div></div>
   </div>`})}
@@ -2568,7 +2573,7 @@ function pgUnit(el){
   mkChart('chUDry',{type:'line',data:{labels:wLBL(),datasets:[
     line({label:'DC',data:sl(unitArr(dryWH,dryIn)),borderColor:lighten(TEMP_COLOR.Dry,0.45),dec:2,dl:{...dl2}}),
     line({label:'Total Dry',data:sl(unitArr(dryGrand,dryIn)),borderColor:TEMP_COLOR.Dry,dec:2,dl:{...dl2},
-      connectTo:'DC', connectColor:SEGCOL.mm, connectLabel:'Mid-Mile per case', connectTag:'Mid-Mile', dec:2, suffix:' THB'}),
+      connectTo:'DC', connectColor:SEGCOL.mm, connectLabel:'Mid-Mile share of the all-in rate', connectTag:'Mid-Mile', dec:2, suffix:' THB'}),
   ]},options:{...padR,scales:{x:gridX,y:{...gridY,title:{display:true,text:'THB/Case'}}}}});
   mkChart('chUFresh',{type:'line',data:{labels:wLBL(),datasets:[
     line({label:'DC',data:sl(unitArr(freshWH,freshKg)),borderColor:lighten(TEMP_COLOR.Fresh,0.45),dec:2,dl:{...dl2}}),
@@ -2728,7 +2733,7 @@ function pgB2BSum(el){
      add up (DC + Mid Mile within one temperature) and carries the one rate that is
      defined for it. */
   const mmNote = isAll
-    ? 'Bars stack DC cost and Mid Mile within this temperature, so the column total is a real total. <b>The rate line follows the legend</b> — hide Mid Mile and it becomes the DC rate, hide DC and it becomes the Mid Mile rate, and the axis renames itself. The denominator never changes, so the three are directly comparable.'
+    ? 'Bars stack DC cost and Mid Mile within this temperature, so the column total is a real total. <b>The rate line follows the legend</b> — hide Mid Mile and it becomes the DC rate, hide DC and it becomes the Mid Mile rate, and the axis renames itself. On Dry the mid-mile rate is per <b>outbound</b> case while DC and Total are per inbound case, matching the source file — so on Dry the two parts do not add to the total.'
     : 'Mid Mile is booked on the temperature rollup only — the source has no per-site transport line — so this site view shows DC cost alone, and the rate is that cost over the same volume.';
   const trendCard = (id, temp) => {
     const dry = temp === 'Dry';
@@ -2778,11 +2783,21 @@ function pgB2BSum(el){
      The denominator never changes — cases for Dry, kilograms for Fresh — so the
      three variants are directly comparable, and the axis says which one is drawn. */
   const rateOf = (sh, dry, want) => sh ? M.map((_,k)=>{
-      const v  = dry ? (dcRaw(sh,'inbound_case')[k]||0) : (dcRaw(sh,'ton')[k]||0)*T_TO_KG;
-      const dc = (dcRaw(sh,'total_wh')[k]||0)+(dcRaw(sh,'tfrs16')[k]||0);
-      const mm = (dcRaw(sh,'transport')[k]||0);
-      const c  = want==='dc' ? dc : want==='mm' ? mm : dc+mm;
-      return v ? c/v : null;
+      /* Two denominators, because the two costs have two different drivers — and this
+         is the source file's own convention, not a choice made here:
+           warehousing  is driven by what comes IN and gets handled   -> inbound cases
+           mid-mile     is driven by what ships OUT to the stores     -> outbound cases
+         Fresh carries no case count at all, so every Fresh rate divides by kilograms.
+         A consequence worth stating plainly: on Dry, the 'dc' and 'mm' rates do NOT add
+         to the 'all' rate, because they are per different things. 'all' stays on inbound
+         so it matches the file's stored all-in rate. */
+      const inb = dry ? (dcRaw(sh,'inbound_case')[k]||0)  : (dcRaw(sh,'ton')[k]||0)*T_TO_KG;
+      const outb= dry ? (dcRaw(sh,'outbound_case')[k]||0) : (dcRaw(sh,'ton')[k]||0)*T_TO_KG;
+      const dc  = (dcRaw(sh,'total_wh')[k]||0)+(dcRaw(sh,'tfrs16')[k]||0);
+      const mm  = (dcRaw(sh,'transport')[k]||0);
+      if(want==='dc') return inb  ? dc/inb   : null;
+      if(want==='mm') return outb ? mm/outb  : null;
+      return inb ? (dc+mm)/inb : null;
     }) : M.map(_=>null);
   /* which numerator the visible bars imply. `hasMM` matters: on a site view there is
      no Mid Mile series at all, so "DC only" is the whole picture and the line should
@@ -2795,7 +2810,9 @@ function pgB2BSum(el){
     return 'all';
   };
   const rateName = (dry, scope) => (dry ? 'THB / case' : 'THB / kg')
-    + (scope==='dc' ? ' — DC' : scope==='mm' ? ' — Mid Mile' : ' — Total');
+    + (scope==='dc' ? (dry?' — DC, per inbound case':' — DC')
+     : scope==='mm' ? (dry?' — Mid Mile, per outbound case':' — Mid Mile')
+     : (dry?' — Total, per inbound case':' — Total'));
 
   /* ---- ONE CHART PER TEMPERATURE ---------------------------------------------
      There is no single "total" THB rate across both temperatures, and the data says
