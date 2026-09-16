@@ -549,7 +549,7 @@ footer{padding:18px 28px;font-size:10.5px;color:var(--on-dark-3);border-top:1px 
 <aside>
   <div class="logo"><div class="mk"><div class="sq"><svg width="19" height="19" viewBox="0 0 24 24" fill="#fff"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zm6.25 0v-7H20v7h-3.5z"/></svg></div><h1>SCM COST<span>Dashboard</span></h1></div></div>
   <nav id="nav"></nav>
-  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-11 · v1.0.1 offline · interactive</div>
+  <div class="sfoot">Data: Jan-2025 → July 2026<br>B2C data from Jan-2026<br>Generated 2026-09-16 · v1.0.2 offline · interactive</div>
 </aside>
 <main>
   <div id="topbar">
@@ -1124,6 +1124,19 @@ function tipInit(){
 const pctVal = (v, d=0) => (v==null || !isFinite(v)) ? '–'
   : fmt(v, d) + '<span class="pct">%</span>';
 
+/* Cost to sales, formatted the SAME way everywhere: exactly two decimals, no % glyph.
+   ---------------------------------------------------------------------------------
+   These figures were rendered three different ways — pctVal at 1 decimal on the FC
+   page, pctVal at 2 on Unit Cost, and chart labels that drifted to 3 whenever two
+   neighbouring months rounded alike. A ratio the reader is meant to compare across
+   pages cannot change precision depending on where it is printed.
+   The % sign is dropped because every one of these sits under a label that already
+   says what it is — "B2B ÷ Store Sales", "% of the sales it serves", "cost to sales" —
+   so the glyph was repeating the axis, not carrying meaning. Where a figure appears
+   without that context, the surrounding text names the unit instead. */
+const C2S_DEC = 2;
+const c2sVal = v => (v==null || !isFinite(v)) ? '–' : fmt(v, C2S_DEC);
+
 /* A topic group: a panel that CONTAINS its cards and charts, tinted with the
    topic's own colour. Used wherever a page splits into big parallel subjects —
    Dry vs Fresh above all, and B2B vs B2C — so the reader sees two blocks
@@ -1606,7 +1619,15 @@ function renderAxisChart(cfg, W, H, id){
   dss.forEach(d=>{
     if(!d.dl) return;
     const gi = barIndex.has(d) ? barIndex.get(d) : -1;
-    const dd = d.dl.fmt? null : adaptDec(d.data.map(nz), d.dl.dec);
+    /* adaptDec adds decimal places when two NEIGHBOURING labels would print the same
+       text, so a flat series stays readable. That is right for a quantity, but wrong
+       for a ratio the reader compares across charts: two months at 2.110 and 2.111
+       pushed the whole cost-to-sales line to three decimals while the line beside it
+       stayed at two, so the same kind of number was formatted two different ways on
+       one chart. `fixed:true` pins the precision and accepts the occasional repeat. */
+    const dd = d.dl.fmt? null
+             : (d.dl.fixed ? (d.dl.dec==null? 2 : d.dl.dec)
+                           : adaptDec(d.data.map(nz), d.dl.dec));
     const f = d.dl.fmt || (x=>fmt(x,dd));
     const li=(()=>{let k=-1; d.data.forEach((v,i)=>{ if(nz(v)!=null) k=i; }); return k;})();
     const sc=(d.yAxisID==='y3'&&sy3)? sy3 : (d.yAxisID==='y2'&&sy2)? sy2 : sy;
@@ -2193,7 +2214,7 @@ function pgSummary(el){
     return `<div class="c2s-row">
       <span class="sw" style="background:${colour}"></span>
       <span class="c2s-name">${name}</span>
-      <span class="c2s-val">${val==null?'<span class="mut">–</span>':fmt(val,2)+'%'}</span>
+      <span class="c2s-val">${c2sVal(val)}</span>
       <span class="c2s-how">${fMB(cst)} ÷ ${fMB(sls)} MB · ${how}</span>
     </div>`;
   };
@@ -2208,9 +2229,13 @@ function pgSummary(el){
       sub:'B2B '+fMB(b2bwh+mm)+' MB (DC '+fMB(b2bwh)+' + Mid-Mile '+fMB(mm)+') · B2C '+fMB(fco+lmSeg)+' MB (FC op '+fMB(fco)+' + Last-Mile '+fMB(lmSeg)+') &nbsp;|&nbsp; '+scopeNote,
       badge:' '+badge(lmMissing(i)?'partial — no last-mile':'B2B + B2C', TOTAL_TXT + (lmMissing(i)?' NOTE: the LMD file has no data for this month, so last-mile is not included in this total.':'')),
       chips:[chip(tot,prevTot,cmpLbl()+(cmpName()?' vs '+esc(cmpName()):'')),
-        `<span class="chip lbl">YoY partial — seven of the eight FCs start 2026</span>`]})}
+        /* This used to read "YoY partial", which readers took to mean the MONTH was
+           incomplete. It is not: the month is whole. What is incomplete is last year's
+           BASE — only FC402 traded in 2025, so a year-on-year % would price seven site
+           openings as a cost increase. Say that, rather than "partial". */
+        `<span class="chip lbl">YoY not like-for-like — 7 of the 8 FCs opened during 2026</span>`]})}
     ${MK.ok ? kpi({tier:'lead', title:'Cost to Sales — Total SCM ÷ total Makro sales',
-      val: pctVal(c2s(totArr, MK.salesAll), 2), unit:'',
+      val: c2sVal(c2s(totArr, MK.salesAll)), unit:'% of sales',
       sub: 'Total SCM '+fMB(tot)+' MB ÷ Makro sales '+fMB(pSum(MK.salesAll))+' MB · '+modeLbl()
            + ' · offline '+fMB(pSum(MK.offline))+' + online from store '+fMB(pSum(MK.o2oStore))
            + ' + from FC dock '+fMB(pSum(MK.fcSales))
@@ -2459,8 +2484,8 @@ function pgUnit(el){
     </div>
   </div>
   <div class="grid g2e" style="margin-top:10px">
-    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly — DC cost includes the TFRS16 lease add-on. All three divide by the same inbound cases, so they read on one scale.</div>
-    <div class="note" style="margin:0">Card 1 = card 2 + card 3 + the TFRS16 lease add-on. All three divide by the same kilograms.</div>
+    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly. Card 2 is warehouse cost <b>including</b> the TFRS16 lease, because TFRS16 is a charge on the warehouse. All three divide by the same inbound cases, so they read on one scale.</div>
+    <div class="note" style="margin:0">Card 1 = card 2 + card 3 exactly. Card 2 is warehouse cost <b>including</b> the TFRS16 lease, because TFRS16 is a charge on the warehouse. All three divide by the same kilograms, so they read on one scale.</div>
   </div>
   <div class="grid g2e" style="margin-top:16px">
     <div class="card">${chBox('chUDry',260,'Dry unit cost trend (THB/Case)')}
@@ -2492,20 +2517,20 @@ function pgUnit(el){
 
   ${MK.ok ? grp({title:'COST TO SALES — each cost over the sales it actually serves', neutral:true,
     sub:modeLbl()+' · '+info(MK_TXT),
-    total: pctVal(c2s(SEG.total, MK.salesAll),2), unit:'total SCM ÷ all sales',
+    total: c2sVal(c2s(SEG.total, MK.salesAll)), unit:'% · total SCM ÷ all sales',
     body:`
   <div class="grid cards3">
-    ${kpi({tier:'lead',title:'B2B ÷ Store Sales',val:pctVal(c2s(SEG.b2b, MK.storeAll),2),unit:'',onClick:goSel('b2bsum'),
+    ${kpi({tier:'lead',title:'B2B ÷ Store Sales',val:c2sVal(c2s(SEG.b2b, MK.storeAll)),unit:'% of store sales',onClick:goSel('b2bsum'),
       sub:'DC + Mid-Mile '+fMB(pSum(SEG.b2b))+' MB ÷ all store sales '+fMB(pSum(MK.storeAll))+' MB',
       badge:' '+badge('offline + online from store','DC and mid-mile stock the store shelves. A case sold off a shelf counts whether the customer carried it out or had it delivered, so the denominator is everything the stores sell — offline plus online-from-store.'),
       chips:[chip(c2s(SEG.b2b,MK.storeAll), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
         return MK.storeAll[i2-1]? SEG.b2b[i2-1]/MK.storeAll[i2-1]*100 : null;})(), cmpLbl())]})}
-    ${kpi({tier:'lead',title:'FC ÷ FC Sales',val:pctVal(c2s(SEG.fcOp, MK.fcSales),2),unit:'',onClick:goSel('fc'),
+    ${kpi({tier:'lead',title:'FC ÷ FC Sales',val:c2sVal(c2s(SEG.fcOp, MK.fcSales)),unit:'% of FC sales',onClick:goSel('fc'),
       sub:'FC operation '+fMB(pSum(SEG.fcOp))+' MB ÷ FC sales '+fMB(pSum(MK.fcSales))+' MB',
       badge:' '+badge('sales off the FC dock','Online orders delivered from the FC dock, plus the IT default adjustment. What left the dock, over what the dock cost to run.'),
       chips:[chip(c2s(SEG.fcOp,MK.fcSales), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
         return MK.fcSales[i2-1]? SEG.fcOp[i2-1]/MK.fcSales[i2-1]*100 : null;})(), cmpLbl())]})}
-    ${kpi({tier:'lead',title:'Last-Mile ÷ Online Sales',val:pctVal(c2s(SEG.lastMile, MK.onlineAll),2),unit:'',onClick:goSel('lm'),
+    ${kpi({tier:'lead',title:'Last-Mile ÷ Online Sales',val:c2sVal(c2s(SEG.lastMile, MK.onlineAll)),unit:'% of online sales',onClick:goSel('lm'),
       sub:'delivery '+fMB(pSum(SEG.lastMile))+' MB ÷ online sales '+fMB(pSum(MK.onlineAll))+' MB',
       badge:' '+badge('online, store + FC','Delivery only ever touches an online order, so the denominator is both online channels together: delivered from the store and delivered from the FC dock.'),
       chips:[chip(c2s(SEG.lastMile,MK.onlineAll), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
@@ -2513,22 +2538,22 @@ function pgUnit(el){
   </div>
   <div class="card" style="margin-top:14px">${chBox('chC2S',270,'Cost to sales by segment — trend (%)')}
     <div class="note">Each line divides one segment's cost by the sales that segment serves, so a line moving is that segment getting better or worse — not a mix shift somewhere else. The three do not add to the total ratio, because they divide by three different denominators.</div></div>
-  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${pctVal(c2s(SEG.total,MK.salesAll),2)}, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>
+  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${c2sVal(c2s(SEG.total,MK.salesAll))}%, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>
   <div class="note" style="border-left:3px solid var(--accent);padding-left:10px"><b>These will not match the FC or Last-Mile teams' cost-to-sales</b> — they divide by Makro sales (RA report) rather than AO or RA, and the gap is sized on <b>13 Sales Reconciliation</b>.</div>`}) : ''}
 
   <div class="section-h"><h5>Unit cost history — B2B and B2C together</h5><div class="ln"></div>
     <span class="mini">${uHead.length} months across · cost, then volume, then the rate</span></div>
   <div class="card">
-    ${tblT(uHead, uRowsT, '<b>B2B</b> — “DC” is warehouse cost ÷ volume (the file convention, excluding TFRS16 and mid-mile); “all-in” adds mid-mile transport, so the gap between those two rows is the mid-mile share. <b>B2C</b> — cost per order is fulfillment operation + last-mile delivery ÷ orders, from '+SRC_NAME[curSrc()]+'. Rates in THB, cost in MB.')}
+    ${tblT(uHead, uRowsT, '<b>B2B</b> — “DC” is warehouse cost including the TFRS16 lease, ÷ volume, and excludes mid-mile; “all-in” adds mid-mile transport, so the gap between those two rows is the mid-mile share. <b>B2C</b> — cost per order is fulfillment operation + last-mile delivery ÷ orders, from '+SRC_NAME[curSrc()]+'. Rates in THB, cost in MB.')}
   </div>`;
 
   /* cost-to-sales trend: one line per segment, each over its own denominator */
   if(MK.ok){
     const ratio = (c,s) => M.map((_,k)=> s[k]? c[k]/s[k]*100 : null);
     mkChart('chC2S',{type:'line',data:{labels:wLBL(),datasets:[
-      line({label:'B2B ÷ store sales',      data:sl(ratio(SEG.b2b, MK.storeAll)),  borderColor:SEGCOL.dcop, dec:2, dl:{dec:2}}),
-      line({label:'FC ÷ FC sales',          data:sl(ratio(SEG.fcOp, MK.fcSales)),  borderColor:SEGCOL.fcop, dec:2, dl:{dec:2}}),
-      line({label:'Last-Mile ÷ online sales',data:sl(ratio(SEG.lastMile, MK.onlineAll)), borderColor:SEGCOL.lm, dec:2, dl:{dec:2}}),
+      line({label:'B2B ÷ store sales',      data:sl(ratio(SEG.b2b, MK.storeAll)),  borderColor:SEGCOL.dcop, dec:2, dl:{dec:2,fixed:true}}),
+      line({label:'FC ÷ FC sales',          data:sl(ratio(SEG.fcOp, MK.fcSales)),  borderColor:SEGCOL.fcop, dec:2, dl:{dec:2,fixed:true}}),
+      line({label:'Last-Mile ÷ online sales',data:sl(ratio(SEG.lastMile, MK.onlineAll)), borderColor:SEGCOL.lm, dec:2, dl:{dec:2,fixed:true}}),
     ]},options:{...padR,scales:{x:gridX,y:{...gridY,title:{display:true,text:'% of the sales it serves'}}}}});
   }
 
@@ -2976,7 +3001,7 @@ function dcDetail(el, chipsRow, sh){
   </div>
   <div class="grid g2" style="margin-top:14px">
     <div class="card"><h4>Unit cost history — ${nm}</h4>
-      ${tblT(hHead, uHistT, 'Unit cost = warehouse cost ÷ '+(isDry?'inbound cases':'kilograms')+' (file convention, excl. TFRS16 and mid-mile). A “–” is a month where the source carries credit entries that make the rate negative and therefore not meaningful.'+(isAgg?' This IS the '+(isDry?'Dry':'Fresh')+' aggregate, so it is not compared against itself.':''))}</div>
+      ${tblT(hHead, uHistT, 'Unit cost = warehouse cost including the TFRS16 lease, ÷ '+(isDry?'inbound cases':'kilograms')+', and excluding mid-mile. A “–” is a month where the source carries credit entries that make the rate negative and therefore not meaningful.'+(isAgg?' This IS the '+(isDry?'Dry':'Fresh')+' aggregate, so it is not compared against itself.':''))}</div>
     <div class="card">${chBox('chUnitPeer',270,'Unit cost by '+(isDry?'Dry':'Fresh')+' distribution center — '+modeLbl()+' ('+(isDry?'THB/Case':'THB/Kg')+')')}
       <div class="note">This site is highlighted; the dashed line is the ${isDry?'Dry':'Fresh'} average. Click a bar to open that distribution center.</div></div>
   </div>`;
@@ -3303,7 +3328,7 @@ function fcOverview(el, chipsRow){
   <div class="grid cards4">
     ${kpi({tier:'lead',title:'B2C FC Operation Cost',val:fMB(pSum(op)),unit:'MB',sub:'delivery reported under Last-Mile',chips:[chip(pSum(op),pPrev(op),cmpLbl())]})}
     ${kpi({title:'Sales (GMV)',val:fMB(pSum(sales)),unit:'MB',sub:'e-commerce gross merchandise value',badge:' '+srcBadge(),chips:[chip(pSum(sales),pPrev(sales),cmpLbl(),true)]})}
-    ${kpi({title:'Cost-to-Sale',val:pctVal(c2s,1),unit:'',sub:'FC operation ÷ sales',badge:' '+srcBadge()})}
+    ${kpi({title:'Cost-to-Sale',val:c2sVal(c2s),unit:'% of sales',sub:'FC operation ÷ sales',badge:' '+srcBadge()})}
     ${kpi({tier:'compact',title:'Average AOV',val:aovAll?fmt(aovAll,0):'–',unit:'THB/order',sub:'Σ sales ÷ Σ orders'})}
   </div>
   <div class="grid g2e" style="margin-top:14px">
@@ -3491,7 +3516,7 @@ function lmOverview(el, head){
       chips:[chip(cost,pc,cmpLbl()), chip(cost,lmYoY(LM.cost),'YoY')]})}
     ${kpi({title:'Total Sales', val:fMB(sales), unit:'MB', sub:'Store + FC', badge:' '+badge('RA',SRC_RMS),
       chips:[chip(sales,ps,cmpLbl(),true), chip(sales,lmYoY(LM.sales),'YoY',true)]})}
-    ${kpi({title:'Cost to Sales', val:pctVal(c2s!=null? c2s*100 : null,2), unit:'',
+    ${kpi({title:'Cost to Sales', val:c2sVal(c2s!=null? c2s*100 : null), unit:'% of sales',
       sub:c2sPrev!=null? ('previous period '+(c2sPrev*100).toFixed(2)+'%') : '',
       badge:' '+badge('RA',SRC_RMS), chips:[chip(c2s,c2sPrev,cmpLbl())]})}
     ${kpi({title:'Driver Cost', val:fMB(lmSum(LM.driver)), unit:'MB',
@@ -3967,7 +3992,7 @@ const RAW_DS = {
         r=>(MK.ok && MK.onlineAll[r.i])? SEG.lastMile[r.i]/MK.onlineAll[r.i]*100 : null],
     ]},
   dc: { name:'Distribution Center — by site and month', unit:'MB / cases / tons',
-    note:'One row per distribution center per month. DC operation cost includes TFRS16; unit cost follows the file convention (excludes TFRS16 and mid-mile).',
+    note:'One row per distribution center per month. DC operation cost includes the TFRS16 lease, and so does the unit cost; the unit cost excludes mid-mile transport. The warehouse-cost column is shown before the lease is added, with TFRS16 itemised beside it, so the two add to DC operation.',
     rows:()=>{const o=[];DC_ORDER.forEach(sh=>MONTHS.forEach((m,i)=>o.push({sh,i})));return o;},
     cols:[
       ['month','Month', r=>M[r.i]],
