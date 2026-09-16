@@ -1124,18 +1124,23 @@ function tipInit(){
 const pctVal = (v, d=0) => (v==null || !isFinite(v)) ? '–'
   : fmt(v, d) + '<span class="pct">%</span>';
 
-/* Cost to sales, formatted the SAME way everywhere: exactly two decimals, no % glyph.
+/* Cost to sales, formatted the SAME way everywhere: a DECIMAL FRACTION, 4 places.
    ---------------------------------------------------------------------------------
-   These figures were rendered three different ways — pctVal at 1 decimal on the FC
-   page, pctVal at 2 on Unit Cost, and chart labels that drifted to 3 whenever two
-   neighbouring months rounded alike. A ratio the reader is meant to compare across
-   pages cannot change precision depending on where it is printed.
-   The % sign is dropped because every one of these sits under a label that already
-   says what it is — "B2B ÷ Store Sales", "% of the sales it serves", "cost to sales" —
-   so the glyph was repeating the axis, not carrying meaning. Where a figure appears
-   without that context, the surrounding text names the unit instead. */
-const C2S_DEC = 2;
-const c2sVal = v => (v==null || !isFinite(v)) ? '–' : fmt(v, C2S_DEC);
+   70% reads .7000, not 70%. Four places rather than two because these ratios are
+   small: at two, B2B (0.0252), Last-Mile (0.0372) and the Total (0.0413) all collapse
+   into 0.03–0.04 and the B2B trend — which moves 0.0210 to 0.0258 over the year —
+   flattens into a straight line. Four places keeps every segment distinguishable and
+   keeps the movement visible, which is the whole point of the trend chart.
+
+   c2sFrac takes a PERCENTAGE (what c2s() and ratio() return) and prints the fraction.
+   c2sPct is kept for the few places that genuinely need the percent form in prose.
+
+   Before this there were three formats on screen — 1 decimal on the FC page, 2 on
+   Unit Cost, and chart labels that drifted to 3 whenever two neighbouring months
+   rounded alike. One helper now owns the format so they cannot diverge again. */
+const C2S_DEC = 4;
+const c2sVal = v => (v==null || !isFinite(v)) ? '–' : fmt(v/100, C2S_DEC);
+const c2sPct = v => (v==null || !isFinite(v)) ? '–' : fmt(v, 2) + '%';
 
 /* A topic group: a panel that CONTAINS its cards and charts, tinted with the
    topic's own colour. Used wherever a page splits into big parallel subjects —
@@ -2235,7 +2240,7 @@ function pgSummary(el){
            openings as a cost increase. Say that, rather than "partial". */
         `<span class="chip lbl">YoY not like-for-like — 7 of the 8 FCs opened during 2026</span>`]})}
     ${MK.ok ? kpi({tier:'lead', title:'Cost to Sales — Total SCM ÷ total Makro sales',
-      val: c2sVal(c2s(totArr, MK.salesAll)), unit:'% of sales',
+      val: c2sVal(c2s(totArr, MK.salesAll)), unit:'cost \u00f7 sales',
       sub: 'Total SCM '+fMB(tot)+' MB ÷ Makro sales '+fMB(pSum(MK.salesAll))+' MB · '+modeLbl()
            + ' · offline '+fMB(pSum(MK.offline))+' + online from store '+fMB(pSum(MK.o2oStore))
            + ' + from FC dock '+fMB(pSum(MK.fcSales))
@@ -2517,28 +2522,28 @@ function pgUnit(el){
 
   ${MK.ok ? grp({title:'COST TO SALES — each cost over the sales it actually serves', neutral:true,
     sub:modeLbl()+' · '+info(MK_TXT),
-    total: c2sVal(c2s(SEG.total, MK.salesAll)), unit:'% · total SCM ÷ all sales',
+    total: c2sVal(c2s(SEG.total, MK.salesAll)), unit:'total SCM ÷ all sales',
     body:`
   <div class="grid cards3">
-    ${kpi({tier:'lead',title:'B2B ÷ Store Sales',val:c2sVal(c2s(SEG.b2b, MK.storeAll)),unit:'% of store sales',onClick:goSel('b2bsum'),
+    ${kpi({tier:'lead',title:'B2B ÷ Store Sales',val:c2sVal(c2s(SEG.b2b, MK.storeAll)),unit:'cost \u00f7 store sales',onClick:goSel('b2bsum'),
       sub:'DC + Mid-Mile '+fMB(pSum(SEG.b2b))+' MB ÷ all store sales '+fMB(pSum(MK.storeAll))+' MB',
       badge:' '+badge('offline + online from store','DC and mid-mile stock the store shelves. A case sold off a shelf counts whether the customer carried it out or had it delivered, so the denominator is everything the stores sell — offline plus online-from-store.'),
       chips:[chip(c2s(SEG.b2b,MK.storeAll), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
         return MK.storeAll[i2-1]? SEG.b2b[i2-1]/MK.storeAll[i2-1]*100 : null;})(), cmpLbl())]})}
-    ${kpi({tier:'lead',title:'FC ÷ FC Sales',val:c2sVal(c2s(SEG.fcOp, MK.fcSales)),unit:'% of FC sales',onClick:goSel('fc'),
+    ${kpi({tier:'lead',title:'FC ÷ FC Sales',val:c2sVal(c2s(SEG.fcOp, MK.fcSales)),unit:'cost \u00f7 FC sales',onClick:goSel('fc'),
       sub:'FC operation '+fMB(pSum(SEG.fcOp))+' MB ÷ FC sales '+fMB(pSum(MK.fcSales))+' MB',
       badge:' '+badge('sales off the FC dock','Online orders delivered from the FC dock, plus the IT default adjustment. What left the dock, over what the dock cost to run.'),
       chips:[chip(c2s(SEG.fcOp,MK.fcSales), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
         return MK.fcSales[i2-1]? SEG.fcOp[i2-1]/MK.fcSales[i2-1]*100 : null;})(), cmpLbl())]})}
-    ${kpi({tier:'lead',title:'Last-Mile ÷ Online Sales',val:c2sVal(c2s(SEG.lastMile, MK.onlineAll)),unit:'% of online sales',onClick:goSel('lm'),
+    ${kpi({tier:'lead',title:'Last-Mile ÷ Online Sales',val:c2sVal(c2s(SEG.lastMile, MK.onlineAll)),unit:'cost \u00f7 online sales',onClick:goSel('lm'),
       sub:'delivery '+fMB(pSum(SEG.lastMile))+' MB ÷ online sales '+fMB(pSum(MK.onlineAll))+' MB',
       badge:' '+badge('online, store + FC','Delivery only ever touches an online order, so the denominator is both online channels together: delivered from the store and delivered from the FC dock.'),
       chips:[chip(c2s(SEG.lastMile,MK.onlineAll), (()=>{const i2=mi(S.month); if(S.mode!=='M'||i2<1)return null;
         return MK.onlineAll[i2-1]? SEG.lastMile[i2-1]/MK.onlineAll[i2-1]*100 : null;})(), cmpLbl())]})}
   </div>
-  <div class="card" style="margin-top:14px">${chBox('chC2S',270,'Cost to sales by segment — trend (%)')}
+  <div class="card" style="margin-top:14px">${chBox('chC2S',270,'Cost to sales by segment — trend (cost \u00f7 sales)')}
     <div class="note">Each line divides one segment's cost by the sales that segment serves, so a line moving is that segment getting better or worse — not a mix shift somewhere else. The three do not add to the total ratio, because they divide by three different denominators.</div></div>
-  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${c2sVal(c2s(SEG.total,MK.salesAll))}%, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>
+  <div class="note"><b>Offline sales carry no cost in this model.</b> About 70% of what Makro sells never touches a delivery or an FC, so a ratio over <i>total</i> sales (${c2sVal(c2s(SEG.total,MK.salesAll))}, i.e. ${c2sPct(c2s(SEG.total,MK.salesAll))}, top of the SCM Summary) understates every segment. These three are the ones to manage against.</div>
   <div class="note" style="border-left:3px solid var(--accent);padding-left:10px"><b>These will not match the FC or Last-Mile teams' cost-to-sales</b> — they divide by Makro sales (RA report) rather than AO or RA, and the gap is sized on <b>13 Sales Reconciliation</b>.</div>`}) : ''}
 
   <div class="section-h"><h5>Unit cost history — B2B and B2C together</h5><div class="ln"></div>
@@ -2549,12 +2554,14 @@ function pgUnit(el){
 
   /* cost-to-sales trend: one line per segment, each over its own denominator */
   if(MK.ok){
-    const ratio = (c,s) => M.map((_,k)=> s[k]? c[k]/s[k]*100 : null);
+    /* the chart plots the FRACTION itself, so the axis, the labels and the cards
+       above are all the same number in the same form */
+    const ratio = (c,s) => M.map((_,k)=> s[k]? c[k]/s[k] : null);
     mkChart('chC2S',{type:'line',data:{labels:wLBL(),datasets:[
-      line({label:'B2B ÷ store sales',      data:sl(ratio(SEG.b2b, MK.storeAll)),  borderColor:SEGCOL.dcop, dec:2, dl:{dec:2,fixed:true}}),
-      line({label:'FC ÷ FC sales',          data:sl(ratio(SEG.fcOp, MK.fcSales)),  borderColor:SEGCOL.fcop, dec:2, dl:{dec:2,fixed:true}}),
-      line({label:'Last-Mile ÷ online sales',data:sl(ratio(SEG.lastMile, MK.onlineAll)), borderColor:SEGCOL.lm, dec:2, dl:{dec:2,fixed:true}}),
-    ]},options:{...padR,scales:{x:gridX,y:{...gridY,title:{display:true,text:'% of the sales it serves'}}}}});
+      line({label:'B2B ÷ store sales',      data:sl(ratio(SEG.b2b, MK.storeAll)),  borderColor:SEGCOL.dcop, dec:4, dl:{dec:4,fixed:true}}),
+      line({label:'FC ÷ FC sales',          data:sl(ratio(SEG.fcOp, MK.fcSales)),  borderColor:SEGCOL.fcop, dec:4, dl:{dec:4,fixed:true}}),
+      line({label:'Last-Mile ÷ online sales',data:sl(ratio(SEG.lastMile, MK.onlineAll)), borderColor:SEGCOL.lm, dec:4, dl:{dec:4,fixed:true}}),
+    ]},options:{...padR,scales:{x:gridX,y:{...gridY,title:{display:true,text:'cost \u00f7 the sales it serves'}}}}});
   }
 
   /* the band between the two lines = the mid-mile share of the all-in unit cost */
@@ -3328,7 +3335,7 @@ function fcOverview(el, chipsRow){
   <div class="grid cards4">
     ${kpi({tier:'lead',title:'B2C FC Operation Cost',val:fMB(pSum(op)),unit:'MB',sub:'delivery reported under Last-Mile',chips:[chip(pSum(op),pPrev(op),cmpLbl())]})}
     ${kpi({title:'Sales (GMV)',val:fMB(pSum(sales)),unit:'MB',sub:'e-commerce gross merchandise value',badge:' '+srcBadge(),chips:[chip(pSum(sales),pPrev(sales),cmpLbl(),true)]})}
-    ${kpi({title:'Cost-to-Sale',val:c2sVal(c2s),unit:'% of sales',sub:'FC operation ÷ sales',badge:' '+srcBadge()})}
+    ${kpi({title:'Cost-to-Sale',val:c2sVal(c2s),unit:'cost \u00f7 sales',sub:'FC operation ÷ sales',badge:' '+srcBadge()})}
     ${kpi({tier:'compact',title:'Average AOV',val:aovAll?fmt(aovAll,0):'–',unit:'THB/order',sub:'Σ sales ÷ Σ orders'})}
   </div>
   <div class="grid g2e" style="margin-top:14px">
@@ -3516,7 +3523,7 @@ function lmOverview(el, head){
       chips:[chip(cost,pc,cmpLbl()), chip(cost,lmYoY(LM.cost),'YoY')]})}
     ${kpi({title:'Total Sales', val:fMB(sales), unit:'MB', sub:'Store + FC', badge:' '+badge('RA',SRC_RMS),
       chips:[chip(sales,ps,cmpLbl(),true), chip(sales,lmYoY(LM.sales),'YoY',true)]})}
-    ${kpi({title:'Cost to Sales', val:c2sVal(c2s!=null? c2s*100 : null), unit:'% of sales',
+    ${kpi({title:'Cost to Sales', val:c2sVal(c2s!=null? c2s*100 : null), unit:'cost \u00f7 sales',
       sub:c2sPrev!=null? ('previous period '+(c2sPrev*100).toFixed(2)+'%') : '',
       badge:' '+badge('RA',SRC_RMS), chips:[chip(c2s,c2sPrev,cmpLbl())]})}
     ${kpi({title:'Driver Cost', val:fMB(lmSum(LM.driver)), unit:'MB',
@@ -3979,17 +3986,17 @@ const RAW_DS = {
       /* the B2C denominator: every delivered order, however it was sourced */
       ['s_online','Sales — all online orders, store + FC dock (MB)', r=>MK.ok? MK.onlineAll[r.i] : null],
       ['s_all','Sales — total (MB)', r=>MK.ok? MK.salesAll[r.i] : null],
-      ['c2s','Cost to sales — Total SCM / all sales (%)',
-        r=>(MK.ok && MK.salesAll[r.i])? SEG.total[r.i]/MK.salesAll[r.i]*100 : null],
-      ['c2s_b2b','Cost to sales — B2B / store sales (%)',
-        r=>(MK.ok && MK.storeAll[r.i])? SEG.b2b[r.i]/MK.storeAll[r.i]*100 : null],
+      ['c2s','Cost to sales — Total SCM / all sales (ratio)',
+        r=>(MK.ok && MK.salesAll[r.i])? SEG.total[r.i]/MK.salesAll[r.i] : null],
+      ['c2s_b2b','Cost to sales — B2B / store sales (ratio)',
+        r=>(MK.ok && MK.storeAll[r.i])? SEG.b2b[r.i]/MK.storeAll[r.i] : null],
       /* the two headline splits, exactly as the SCM Summary card states them */
-      ['c2s_b2c','Cost to sales — B2C / online orders (%)',
-        r=>(MK.ok && MK.onlineAll[r.i])? (SEG.fcOp[r.i]+(SEG.lastMile[r.i]||0))/MK.onlineAll[r.i]*100 : null],
-      ['c2s_fc','Cost to sales — FC / FC sales (%)',
-        r=>(MK.ok && MK.fcSales[r.i])? SEG.fcOp[r.i]/MK.fcSales[r.i]*100 : null],
-      ['c2s_lm','Cost to sales — Last-Mile / online sales (%)',
-        r=>(MK.ok && MK.onlineAll[r.i])? SEG.lastMile[r.i]/MK.onlineAll[r.i]*100 : null],
+      ['c2s_b2c','Cost to sales — B2C / online orders (ratio)',
+        r=>(MK.ok && MK.onlineAll[r.i])? (SEG.fcOp[r.i]+(SEG.lastMile[r.i]||0))/MK.onlineAll[r.i] : null],
+      ['c2s_fc','Cost to sales — FC / FC sales (ratio)',
+        r=>(MK.ok && MK.fcSales[r.i])? SEG.fcOp[r.i]/MK.fcSales[r.i] : null],
+      ['c2s_lm','Cost to sales — Last-Mile / online sales (ratio)',
+        r=>(MK.ok && MK.onlineAll[r.i])? SEG.lastMile[r.i]/MK.onlineAll[r.i] : null],
     ]},
   dc: { name:'Distribution Center — by site and month', unit:'MB / cases / tons',
     note:'One row per distribution center per month. DC operation cost includes the TFRS16 lease, and so does the unit cost; the unit cost excludes mid-mile transport. The warehouse-cost column is shown before the lease is added, with TFRS16 itemised beside it, so the two add to DC operation.',
